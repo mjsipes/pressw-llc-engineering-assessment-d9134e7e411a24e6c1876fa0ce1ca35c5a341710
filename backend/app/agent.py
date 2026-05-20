@@ -147,7 +147,9 @@ def run_agent(message: str, session_id: str, history: List = None, equipment: st
         if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
             for tool_call in msg.tool_calls:
                 if tool_call["name"] == "create_recipe":
+                    print(f"DEBUG: tool_call args = {tool_call['args']}")
                     recipe_data = tool_call["args"].get("recipe", tool_call["args"])
+                    print(f"DEBUG: recipe_data = {recipe_data}")
                     break
     
     # Extract final response (skip tool messages)

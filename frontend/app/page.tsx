@@ -27,12 +27,61 @@ interface Message {
   recipe?: Recipe;
 }
 
+const parseRecipeFromText = (text: string): Recipe | null => {
+  try {
+    // Extract recipe name - try multiple patterns
+    let name = 'Recipe';
+    const patterns = [
+      /recipe for \*\*(.+?)\*\*!/i,  // "recipe for **Name**!"
+      /recipe for (.+?)!/i,           // "recipe for Name!"
+      /Here's.*?\*\*(.+?)\*\*/i,      // "Here's a **Name**"
+      /\*\*(.+?)\*\*/                  // First **bold text**
+    ];
+    
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match && match[1]) {
+        name = match[1].trim();
+        break;
+      }
+    }
+    
+    // Extract total time
+    const timeMatch = text.match(/\*\*Total Time:\*\* (.+)/i);
+    const total_time = timeMatch ? timeMatch[1] : '30 min';
+    
+    // Extract ingredients
+    const ingredientsMatch = text.match(/\*\*Ingredients:\*\*([\s\S]*?)(?=\*\*Instructions:\*\*)/);
+    const ingredients = ingredientsMatch 
+      ? ingredientsMatch[1].split('\n').filter(line => line.trim().startsWith('-')).map(line => line.replace(/^-\s*/, '').trim())
+      : [];
+    
+    // Extract instructions
+    const instructionsMatch = text.match(/\*\*Instructions:\*\*([\s\S]*?)(?=\*\*Fun Fact|\n\n|$)/);
+    const instructions = instructionsMatch
+      ? instructionsMatch[1].split('\n').filter(line => /^\d+\./.test(line.trim())).map(line => line.replace(/^\d+\.\s*/, '').trim())
+      : [];
+    
+    // Extract history note
+    const historyMatch = text.match(/\*\*Fun Fact:\*\* (.+)/i);
+    const history_note = historyMatch ? historyMatch[1] : undefined;
+    
+    if (ingredients.length > 0 && instructions.length > 0) {
+      return { name, total_time, ingredients, instructions, history_note };
+    }
+  } catch (e) {
+    console.error('Failed to parse recipe:', e);
+  }
+  return null;
+};
+
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [equipment, setEquipment] = useState('stove, oven');
   const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('kitchen-equipment');
@@ -73,12 +122,19 @@ export default function Home() {
 
       const data = await response.json();
       
+      // Parse recipe from text if it's a recipe type
+      let parsedRecipe = data.recipe;
+      if (data.type === 'recipe' && !parsedRecipe && data.response) {
+        parsedRecipe = parseRecipeFromText(data.response);
+        console.log('Parsed recipe:', parsedRecipe);
+      }
+      
       const assistantMessage: Message = {
         role: 'assistant',
         content: data.response,
         type: data.type,
         data: data.data,
-        recipe: data.recipe
+        recipe: parsedRecipe
       };
       
       setMessages(prev => [...prev, assistantMessage]);
@@ -89,8 +145,8 @@ export default function Home() {
       }
       
       // Save recipe if created
-      if (data.recipe) {
-        setRecipes(prev => [data.recipe, ...prev]);
+      if (parsedRecipe) {
+        setRecipes(prev => [parsedRecipe, ...prev]);
       }
     } catch (error) {
       console.error('Error:', error);
@@ -148,25 +204,27 @@ export default function Home() {
                       </Avatar>
                     )}
                     <div className="flex flex-col gap-3 max-w-[85%]">
-                      <div
-                        className={`rounded-2xl px-4 py-3 text-sm ${
-                          message.role === 'user'
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted'
-                        }`}
-                      >
-                        {message.role === 'user' ? (
-                          message.content
-                        ) : (
-                          <div>
-                            {!message.content && isLoading && index === messages.length - 1 ? (
-                              <span>Thinking...</span>
-                            ) : (
-                              <span className="whitespace-pre-wrap">{message.content}</span>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                      {!message.recipe && (
+                        <div
+                          className={`rounded-2xl px-4 py-3 text-sm ${
+                            message.role === 'user'
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-muted'
+                          }`}
+                        >
+                          {message.role === 'user' ? (
+                            message.content
+                          ) : (
+                            <div>
+                              {!message.content && isLoading && index === messages.length - 1 ? (
+                                <span>Thinking...</span>
+                              ) : (
+                                <span className="whitespace-pre-wrap">{message.content}</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       
                       {message.recipe && (
                         <div className="bg-card border rounded-lg p-4 text-sm">
@@ -270,9 +328,45 @@ export default function Home() {
               ) : (
                 <div className="space-y-3">
                   {recipes.map((recipe, i) => (
-                    <div key={i} className="bg-card border rounded-lg p-3 text-xs">
-                      <h4 className="font-semibold text-sm mb-1">{recipe.name}</h4>
-                      <p className="text-muted-foreground">⏱️ {recipe.total_time}</p>
+                    <div key={i} className="space-y-2">
+                      <button
+                        onClick={() => setSelectedRecipe(selectedRecipe?.name === recipe.name ? null : recipe)}
+                        className="w-full bg-card border rounded-lg p-2 text-sm hover:bg-accent transition-colors text-left font-medium"
+                      >
+                        {recipe.name}
+                      </button>
+                      
+                      {selectedRecipe?.name === recipe.name && (
+                        <div className="bg-card border rounded-lg p-4 text-sm">
+                          <div className="flex justify-between items-start mb-3">
+                            <h3 className="font-semibold text-base">{recipe.name}</h3>
+                            <span className="text-xs text-muted-foreground">⏱️ {recipe.total_time}</span>
+                          </div>
+                          
+                          {recipe.history_note && (
+                            <p className="text-xs text-muted-foreground italic mb-3">{recipe.history_note}</p>
+                          )}
+                          
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <h4 className="font-semibold mb-2">Ingredients</h4>
+                              <ul className="space-y-1 text-xs">
+                                {recipe.ingredients.map((ing, i) => (
+                                  <li key={i}>• {ing}</li>
+                                ))}
+                              </ul>
+                            </div>
+                            <div>
+                              <h4 className="font-semibold mb-2">Instructions</h4>
+                              <ol className="space-y-1 text-xs">
+                                {recipe.instructions.map((step, i) => (
+                                  <li key={i}>{i + 1}. {step}</li>
+                                ))}
+                              </ol>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
