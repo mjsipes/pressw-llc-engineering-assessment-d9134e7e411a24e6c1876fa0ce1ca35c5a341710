@@ -25,6 +25,7 @@ class ChatRequest(BaseModel):
     message: str
     session_id: str
     messages: Optional[List[Message]] = []
+    equipment: Optional[str] = "stove, oven"
 
 class ChatResponse(BaseModel):
     response: str
@@ -37,10 +38,19 @@ async def root():
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    # TODO: Integrate LangGraph agent
+    from .agent import run_agent
+    
+    result = run_agent(
+        message=request.message,
+        session_id=request.session_id,
+        history=request.messages,
+        equipment=request.equipment
+    )
+    
     return ChatResponse(
-        response="Hello! I'm PantryPal, your cooking assistant. How can I help you today?",
-        type="text"
+        response=result["response"],
+        type=result["type"],
+        data=result.get("data")
     )
 
 @app.get("/health")

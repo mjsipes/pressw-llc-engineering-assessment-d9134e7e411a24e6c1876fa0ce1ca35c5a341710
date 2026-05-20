@@ -1,30 +1,54 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
 import { ArrowUp } from 'lucide-react';
-import Image from 'next/image';
+
+interface Recipe {
+  name: string;
+  total_time: string;
+  ingredients: string[];
+  instructions: string[];
+  history_note?: string;
+}
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
   type?: string;
   data?: any;
+  recipe?: Recipe;
 }
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
+  const [equipment, setEquipment] = useState('stove, oven');
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('kitchen-equipment');
+    if (saved) setEquipment(saved);
+    
+    const savedRecipes = localStorage.getItem('recipes');
+    if (savedRecipes) setRecipes(JSON.parse(savedRecipes));
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('kitchen-equipment', equipment);
+  }, [equipment]);
+
+  useEffect(() => {
+    localStorage.setItem('recipes', JSON.stringify(recipes));
+  }, [recipes]);
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,19 +66,32 @@ export default function Home() {
         body: JSON.stringify({
           message: input,
           session_id: 'test-session',
-          messages: messages
+          messages: messages,
+          equipment: equipment
         })
       });
 
       const data = await response.json();
+      
       const assistantMessage: Message = {
         role: 'assistant',
         content: data.response,
         type: data.type,
-        data: data.data
+        data: data.data,
+        recipe: data.recipe
       };
       
       setMessages(prev => [...prev, assistantMessage]);
+      
+      // Update equipment if agent modified it
+      if (data.updated_equipment) {
+        setEquipment(data.updated_equipment);
+      }
+      
+      // Save recipe if created
+      if (data.recipe) {
+        setRecipes(prev => [data.recipe, ...prev]);
+      }
     } catch (error) {
       console.error('Error:', error);
     } finally {
@@ -69,15 +106,16 @@ export default function Home() {
     }
   };
 
-  const welcomeMessage = "Hi! I'm your cooking buddy! Tell me what you're thinking of making and I'll help bring your ideas to life!";
-  const characterTitle = "Kitchen Companion";
-
   return (
     <div className="h-screen flex flex-col bg-background">
       {/* Header */}
       <div className="h-16 border-b flex items-center justify-between px-6">
         <div className="flex items-center gap-3">
-          <span className="text-2xl font-bold bg-gradient-to-r from-orange-500 to-orange-600 bg-clip-text text-transparent">
+          <Avatar className="w-10 h-10">
+            <AvatarImage src="/panda.png" alt="PantryPal" />
+            <AvatarFallback>PP</AvatarFallback>
+          </Avatar>
+          <span className="text-xl font-bold bg-gradient-to-r from-orange-500 to-orange-600 bg-clip-text text-transparent">
             PantryPal
           </span>
         </div>
@@ -88,58 +126,13 @@ export default function Home() {
         {/* Chat Panel */}
         <ResizablePanel defaultSize={60} minSize={40}>
           <div className="h-full flex flex-col">
-            {/* Character Header as Button */}
-            <div className="p-4 border-b">
-              <Tooltip open={isOpen} onOpenChange={setIsOpen}>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start h-auto p-3 hover:bg-accent"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setIsOpen(true);
-                    }}
-                  >
-                    <Avatar className="w-12 h-12 mr-3">
-                      <AvatarImage src="/panda.png" alt="PantryPal" />
-                      <AvatarFallback className="bg-primary text-primary-foreground">
-                        PP
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex flex-col items-start">
-                      <span className="font-semibold text-base">PantryPal</span>
-                      <span className="text-xs text-muted-foreground">{characterTitle}</span>
-                    </div>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent
-                  side="bottom"
-                  className="max-w-xs p-4"
-                  sideOffset={5}
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-start gap-2">
-                      <Avatar className="w-8 h-8 shrink-0">
-                        <AvatarImage src="/panda.png" alt="PantryPal" />
-                        <AvatarFallback>PP</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1">
-                        <p className="font-semibold text-sm">PantryPal</p>
-                        <p className="text-xs text-muted-foreground">{characterTitle}</p>
-                      </div>
-                    </div>
-                    <p className="text-sm">{welcomeMessage}</p>
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-            </div>
 
             {/* Chat Messages */}
-            <ScrollArea className="flex-1 p-4">
+            <ScrollArea className="flex-1 px-2 py-3">
               <div className="space-y-4 max-w-3xl mx-auto">
                 {messages.length === 0 && (
                   <div className="text-center text-muted-foreground py-12">
-                    <p>Ask me anything about cooking!</p>
+                    <p className="text-sm">Ask me anything about cooking!</p>
                   </div>
                 )}
                 
@@ -154,22 +147,56 @@ export default function Home() {
                         <AvatarFallback>PP</AvatarFallback>
                       </Avatar>
                     )}
-                    <div
-                      className={`rounded-2xl px-4 py-3 max-w-[80%] ${
-                        message.role === 'user'
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-muted'
-                      } ${message.content.length > 120 ? 'w-full' : ''}`}
-                    >
-                      {message.role === 'user' ? (
-                        message.content
-                      ) : (
-                        <div>
-                          {!message.content && isLoading && index === messages.length - 1 ? (
-                            <p className="text-sm">Thinking...</p>
-                          ) : (
-                            <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                    <div className="flex flex-col gap-3 max-w-[85%]">
+                      <div
+                        className={`rounded-2xl px-4 py-3 text-sm ${
+                          message.role === 'user'
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-muted'
+                        }`}
+                      >
+                        {message.role === 'user' ? (
+                          message.content
+                        ) : (
+                          <div>
+                            {!message.content && isLoading && index === messages.length - 1 ? (
+                              <span>Thinking...</span>
+                            ) : (
+                              <span className="whitespace-pre-wrap">{message.content}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      
+                      {message.recipe && (
+                        <div className="bg-card border rounded-lg p-4 text-sm">
+                          <div className="flex justify-between items-start mb-3">
+                            <h3 className="font-semibold text-base">{message.recipe.name}</h3>
+                            <span className="text-xs text-muted-foreground">⏱️ {message.recipe.total_time}</span>
+                          </div>
+                          
+                          {message.recipe.history_note && (
+                            <p className="text-xs text-muted-foreground italic mb-3">{message.recipe.history_note}</p>
                           )}
+                          
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <h4 className="font-semibold mb-2">Ingredients</h4>
+                              <ul className="space-y-1 text-xs">
+                                {message.recipe.ingredients.map((ing, i) => (
+                                  <li key={i}>• {ing}</li>
+                                ))}
+                              </ul>
+                            </div>
+                            <div>
+                              <h4 className="font-semibold mb-2">Instructions</h4>
+                              <ol className="space-y-1 text-xs">
+                                {message.recipe.instructions.map((step, i) => (
+                                  <li key={i}>{i + 1}. {step}</li>
+                                ))}
+                              </ol>
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -182,8 +209,8 @@ export default function Home() {
                       <AvatarImage src="/panda.png" alt="PantryPal" />
                       <AvatarFallback>PP</AvatarFallback>
                     </Avatar>
-                    <div className="rounded-2xl px-4 py-3 bg-muted">
-                      <p className="text-sm">Thinking...</p>
+                    <div className="rounded-2xl px-4 py-3 bg-muted text-sm">
+                      <span>Thinking...</span>
                     </div>
                   </div>
                 )}
@@ -191,7 +218,7 @@ export default function Home() {
             </ScrollArea>
 
             {/* Input */}
-            <div className="p-4 border-t">
+            <div className="px-2 py-3 border-t">
               <form onSubmit={sendMessage} className="max-w-3xl mx-auto">
                 <div className="relative flex items-end gap-2">
                   <textarea
@@ -221,23 +248,35 @@ export default function Home() {
 
         {/* Right Panel - Equipment & Recipes */}
         <ResizablePanel defaultSize={40} minSize={30}>
-          <div className="h-full flex flex-col">
+          <div className="h-full flex flex-col bg-muted/30">
             {/* Equipment Section */}
             <div className="p-4 border-b">
               <h3 className="font-semibold text-sm mb-3">🍳 My Kitchen Equipment</h3>
-              <div className="space-y-2">
-                <div className="text-sm text-muted-foreground">
-                  Equipment drawer coming soon...
-                </div>
-              </div>
+              <textarea
+                value={equipment}
+                onChange={(e) => setEquipment(e.target.value)}
+                placeholder="stove, oven, blender..."
+                className="w-full min-h-[80px] px-3 py-2 text-sm rounded-lg border border-input bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+              />
             </div>
 
             {/* Recipes Section */}
             <ScrollArea className="flex-1 p-4">
-              <h3 className="font-semibold text-sm mb-3">📋 Recipes</h3>
-              <div className="text-sm text-muted-foreground">
-                Recipes will appear here...
-              </div>
+              <h3 className="font-semibold text-sm mb-3">📋 Recipes ({recipes.length})</h3>
+              {recipes.length === 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  Ask for a recipe to get started!
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {recipes.map((recipe, i) => (
+                    <div key={i} className="bg-card border rounded-lg p-3 text-xs">
+                      <h4 className="font-semibold text-sm mb-1">{recipe.name}</h4>
+                      <p className="text-muted-foreground">⏱️ {recipe.total_time}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </ScrollArea>
           </div>
         </ResizablePanel>
