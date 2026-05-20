@@ -81,7 +81,6 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [equipment, setEquipment] = useState('stove, oven');
   const [recipes, setRecipes] = useState<Recipe[]>([]);
-  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('kitchen-equipment');
@@ -328,45 +327,34 @@ export default function Home() {
               ) : (
                 <div className="space-y-3">
                   {recipes.map((recipe, i) => (
-                    <div key={i} className="space-y-2">
-                      <button
-                        onClick={() => setSelectedRecipe(selectedRecipe?.name === recipe.name ? null : recipe)}
-                        className="w-full bg-card border rounded-lg p-2 text-sm hover:bg-accent transition-colors text-left font-medium"
-                      >
-                        {recipe.name}
-                      </button>
+                    <div key={i} className="bg-card border rounded-lg p-4 text-sm">
+                      <div className="flex justify-between items-start mb-3">
+                        <h3 className="font-semibold text-base">{recipe.name}</h3>
+                        <span className="text-xs text-muted-foreground">⏱️ {recipe.total_time}</span>
+                      </div>
                       
-                      {selectedRecipe?.name === recipe.name && (
-                        <div className="bg-card border rounded-lg p-4 text-sm">
-                          <div className="flex justify-between items-start mb-3">
-                            <h3 className="font-semibold text-base">{recipe.name}</h3>
-                            <span className="text-xs text-muted-foreground">⏱️ {recipe.total_time}</span>
-                          </div>
-                          
-                          {recipe.history_note && (
-                            <p className="text-xs text-muted-foreground italic mb-3">{recipe.history_note}</p>
-                          )}
-                          
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <h4 className="font-semibold mb-2">Ingredients</h4>
-                              <ul className="space-y-1 text-xs">
-                                {recipe.ingredients.map((ing, i) => (
-                                  <li key={i}>• {ing}</li>
-                                ))}
-                              </ul>
-                            </div>
-                            <div>
-                              <h4 className="font-semibold mb-2">Instructions</h4>
-                              <ol className="space-y-1 text-xs">
-                                {recipe.instructions.map((step, i) => (
-                                  <li key={i}>{i + 1}. {step}</li>
-                                ))}
-                              </ol>
-                            </div>
-                          </div>
-                        </div>
+                      {recipe.history_note && (
+                        <p className="text-xs text-muted-foreground italic mb-3">{recipe.history_note}</p>
                       )}
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <h4 className="font-semibold mb-2">Ingredients</h4>
+                          <ul className="space-y-1 text-xs">
+                            {recipe.ingredients.map((ing, i) => (
+                              <li key={i}>• {ing}</li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div>
+                          <h4 className="font-semibold mb-2">Instructions</h4>
+                          <ol className="space-y-1 text-xs">
+                            {recipe.instructions.map((step, i) => (
+                              <li key={i}>{i + 1}. {step}</li>
+                            ))}
+                          </ol>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
