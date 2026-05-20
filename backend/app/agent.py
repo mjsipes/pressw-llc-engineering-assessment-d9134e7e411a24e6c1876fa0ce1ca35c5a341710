@@ -16,18 +16,6 @@ class Recipe(BaseModel):
     instructions: List[str] = Field(description="Step-by-step cooking instructions")
     history_note: Optional[str] = Field(description="Fun historical or cultural fact about the dish", default=None)
 
-# Equipment state holder
-class EquipmentState:
-    def __init__(self, equipment: str = "stove, oven"):
-        self.equipment = equipment
-        self.updated = False
-        self.recipe = None
-
-@tool
-def update_equipment(new_equipment: str) -> str:
-    """Add or update the user's kitchen equipment list. Use when user mentions new equipment they have."""
-    return f"Equipment updated to: {new_equipment}"
-
 @tool
 def create_recipe(recipe: Recipe) -> str:
     """Create a structured recipe when the user asks for cooking instructions. Include ingredients, steps, total time, and a fun history fact."""
@@ -48,16 +36,16 @@ The user currently has the following kitchen equipment: {equipment}
 
 IMPORTANT - When the user asks for a recipe or "how to make" something, you MUST use the create_recipe tool. Do not describe calling the tool or say you will call it - actually invoke it with full structured data (name, total_time, ingredients as a list, instructions as a list, history_note).
 
-When the user mentions new equipment they have, use the update_equipment tool to add it to their list.
+If the user mentions new equipment, let them know they can add it to the equipment list in the right panel.
 
 Keep responses concise and conversational. You're a cooking buddy, not a recipe encyclopedia."""
 
 # Agent logic  
-def create_chat_node(equipment: str = "stove, oven", equipment_state: EquipmentState = None):
+def create_chat_node(equipment: str = "stove, oven"):
     """Create a chat node with equipment context"""
     # Create LLM with tools
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
-    llm_with_tools = llm.bind_tools([update_equipment, create_recipe])
+    llm_with_tools = llm.bind_tools([create_recipe])
     
     def chat_node(state: MessagesState):
         """Main chat node that processes messages"""
@@ -68,33 +56,20 @@ def create_chat_node(equipment: str = "stove, oven", equipment_state: EquipmentS
             messages = [SystemMessage(content=get_system_prompt(equipment))] + messages
         
         response = llm_with_tools.invoke(messages)
-        
-        # Check if tool was called
-        if response.tool_calls and equipment_state:
-            for tool_call in response.tool_calls:
-                if tool_call["name"] == "update_equipment":
-                    new_equipment = tool_call["args"]["new_equipment"]
-                    equipment_state.equipment = new_equipment
-                    equipment_state.updated = True
-                elif tool_call["name"] == "create_recipe":
-                    # Extract recipe from args - could be nested or direct
-                    recipe_data = tool_call["args"].get("recipe", tool_call["args"])
-                    equipment_state.recipe = recipe_data
-        
         return {"messages": [response]}
     
     return chat_node
 
 # Create the graph
-def create_agent(equipment: str = "stove, oven", equipment_state: EquipmentState = None):
+def create_agent(equipment: str = "stove, oven"):
     """Create and compile the LangGraph agent"""
     from langgraph.prebuilt import ToolNode
     
     workflow = StateGraph(MessagesState)
     
     # Add nodes
-    workflow.add_node("chat", create_chat_node(equipment, equipment_state))
-    workflow.add_node("tools", ToolNode([update_equipment, create_recipe]))
+    workflow.add_node("chat", create_chat_node(equipment))
+    workflow.add_node("tools", ToolNode([create_recipe]))
     
     # Set entry point
     workflow.set_entry_point("chat")
@@ -131,11 +106,8 @@ def run_agent(message: str, session_id: str, history: List = None, equipment: st
     # Add current message
     messages.append(HumanMessage(content=message))
     
-    # Create equipment state tracker
-    equipment_state = EquipmentState(equipment)
-    
     # Create agent with equipment context
-    agent = create_agent(equipment, equipment_state)
+    agent = create_agent(equipment)
     
     # Run agent
     config = {"configurable": {"thread_id": session_id}}
@@ -147,10 +119,7 @@ def run_agent(message: str, session_id: str, history: List = None, equipment: st
         if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
             for tool_call in msg.tool_calls:
                 if tool_call["name"] == "create_recipe":
-                    print(f"DEBUG: tool_call args = {tool_call['args']}")
                     recipe_data = tool_call["args"].get("recipe", tool_call["args"])
-                    print(f"DEBUG: recipe_data = {recipe_data}")
-                    break
     
     # Extract final response (skip tool messages)
     last_message = None
@@ -166,10 +135,6 @@ def run_agent(message: str, session_id: str, history: List = None, equipment: st
         "response": last_message.content,
         "type": "recipe" if recipe_data else "text"
     }
-    
-    # Include updated equipment if changed
-    if equipment_state.updated:
-        response_data["updated_equipment"] = equipment_state.equipment
     
     # Include recipe if created
     if recipe_data:
